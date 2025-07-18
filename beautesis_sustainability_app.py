@@ -75,7 +75,7 @@ def export_pdf(score, breakdown, suggestions):
     pdf.cell(0, 10, "Suggestions for Improvement:", ln=True)
     for s in suggestions:
         pdf.multi_cell(0, 10, f"- {s}")
-    pdf.output("/mnt/data/beautesis_sfi_summary.pdf")
+    pdf.output("beautesis_sfi_summary.pdf")
 
 if uploaded_file:
     text = extract_text_from_pdf(uploaded_file)
@@ -83,7 +83,7 @@ if uploaded_file:
     with st.expander("📝 See extracted text"):
         st.write(text)
 
-    st.markdown("### ☑️ Confirm the detected sustainability features")
+    st.markdown("[📥 Click to download](beautesis_sfi_summary.pdf)", unsafe_allow_html=True)
     flags = detect_flags(text)
     confirmations = {}
     col1, col2 = st.columns(2)

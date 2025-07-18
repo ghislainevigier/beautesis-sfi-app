@@ -2,82 +2,110 @@
 # beautesis_sustainability_app.py
 import streamlit as st
 import pandas as pd
+import io
+from PyPDF2 import PdfReader
 
 st.set_page_config(page_title="Beautesis Sustainability Scorer", layout="wide")
 st.title("🌿 Beautesis Sustainable Formulation Index (SFI)")
-st.markdown("Upload your formulation file to generate a sustainability score and get improvement suggestions.")
+st.markdown("Choose how you want to input your formulation:")
 
-uploaded_file = st.file_uploader("📄 Upload your formulation (.xlsx or .csv)", type=["xlsx", "csv"])
+mode = st.radio("Input mode", ["📄 Upload file", "✏️ Paste formulation manually"])
 
-if uploaded_file:
-    try:
-        if uploaded_file.name.endswith(".csv"):
-            df = pd.read_csv(uploaded_file)
-        else:
-            df = pd.read_excel(uploaded_file)
+df = None
 
-        st.success("✅ File uploaded and parsed successfully!")
-        st.dataframe(df)
+if mode == "📄 Upload file":
+    uploaded_file = st.file_uploader("Upload a .csv, .xlsx, or .pdf", type=["csv", "xlsx", "pdf"])
+    if uploaded_file:
+        try:
+            if uploaded_file.name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            elif uploaded_file.name.endswith(".xlsx"):
+                df = pd.read_excel(uploaded_file)
+            elif uploaded_file.name.endswith(".pdf"):
+                reader = PdfReader(uploaded_file)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text()
+                rows = [line for line in text.split("\n") if "," in line]
+                data = [line.split(",") for line in rows]
+                df = pd.DataFrame(data[1:], columns=data[0])
+        except Exception as e:
+            st.error(f"Error reading file: {e}")
 
-        score = 0
-        total = 100
-        advisory = []
+elif mode == "✏️ Paste formulation manually":
+    text_input = st.text_area("Paste your INCI list (comma-separated: Ingredient,Function,%, etc.)")
+    if text_input:
+        try:
+            lines = [l for l in text_input.split("\n") if "," in l]
+            data = [line.split(",") for line in lines]
+            df = pd.DataFrame(data[1:], columns=data[0])
+        except Exception as e:
+            st.error(f"Error parsing text: {e}")
 
+if df is not None:
+    st.success("✅ Formulation parsed successfully!")
+    st.dataframe(df)
+
+    score = 0
+    total = 100
+    advisory = []
+
+    if "INCI" in df.columns:
         noi_criteria = any("hyaluronate" in str(i).lower() or "natural" in str(i).lower() for i in df["INCI"])
         if noi_criteria:
             score += 10
         else:
-            advisory.append("Consider increasing natural or biobased ingredients to improve NOI.")
+            advisory.append("Increase natural or biobased ingredients to improve NOI.")
 
         upcycled_or_biotech = any("ferment" in str(i).lower() or "biotech" in str(i).lower() for i in df["INCI"])
         if upcycled_or_biotech:
             score += 5
         else:
-            advisory.append("Explore using biotech or upcycled ingredients.")
+            advisory.append("Use biotech or upcycled ingredients.")
 
         petrochemicals = any("PEG" in str(i) or "dimethicone" in str(i).lower() for i in df["INCI"])
         if not petrochemicals:
             score += 10
         else:
-            advisory.append("Reduce reliance on petrochemical derivatives like PEG or silicones.")
+            advisory.append("Reduce PEGs and silicones.")
 
-        if "cold" in df.columns.str.lower().tolist():
-            score += 5
-        advisory.append("Indicate cold-process compatibility for bonus points.")
+    if "Wt %" in df.columns:
+        try:
+            wt_series = df["Wt %"].astype(str).str.replace("%", "").str.strip()
+            wt_floats = pd.to_numeric(wt_series, errors="coerce")
+            if wt_floats.lt(2).sum() > 5:
+                score += 5
+            else:
+                advisory.append("Use more high-efficiency actives (<2%).")
+        except:
+            advisory.append("Could not evaluate usage percentages.")
 
-        if df["Wt %"].apply(lambda x: isinstance(x, (float, int)) and x < 2).sum() > 5:
-            score += 5
-        else:
-            advisory.append("Consider using more high-efficiency actives (usage < 2%).")
+    score += 5
+    advisory.append("Specify eco-packaging format for extra score.")
 
-        score += 5
-        advisory.append("Ensure to specify packaging format (solid, refillable, recyclable) to gain full score.")
-
+    if "Function" in df.columns:
         keywords = ["brightening", "hydrating", "fast", "multifunction", "barrier", "sensorial"]
         if any(any(k in str(f).lower() for k in keywords) for f in df["Function"]):
             score += 15
         else:
-            advisory.append("Add multifunctional or wellness-related claims for higher application relevance score.")
+            advisory.append("Add wellness or multifunctional claims.")
 
-        if score >= 80:
-            badge = "💚 Sustainably Formulated"
-        elif score >= 60:
-            badge = "💛 Better Choice"
-        else:
-            badge = "⚠️ Needs Improvement"
+    if score >= 80:
+        badge = "💚 Sustainably Formulated"
+    elif score >= 60:
+        badge = "💛 Better Choice"
+    else:
+        badge = "⚠️ Needs Improvement"
 
-        st.markdown("---")
-        st.subheader("📊 Sustainability Score")
-        st.metric("SFI Score", f"{score} / {total}")
-        st.success(f"Rating: {badge}")
+    st.markdown("---")
+    st.subheader("📊 Sustainability Score")
+    st.metric("SFI Score", f"{score} / {total}")
+    st.success(f"Rating: {badge}")
 
-        st.markdown("---")
-        st.subheader("📝 Advisory Feedback")
-        for point in advisory:
-            st.write("- ", point)
+    st.markdown("---")
+    st.subheader("📝 Advisory Feedback")
+    for point in advisory:
+        st.write("- ", point)
 
-        if st.button("✅ Approve & Export to CRM"):
-            st.success("Formulation score and feedback approved and ready for CRM integration.")
-
-    except Exception as e:
-        st.error(f"❌ Failed to process file: {e}")
+    if st.button("✅ Approve & Export to CRM"):
+        st.success("Formulation score and feedback approved and ready for CRM integration.")
